@@ -3,4 +3,5 @@ import type { TokenGenerator } from "../services/tokenGenerator";
 
 export const newMockTokenGenerator = (): MockedObject<TokenGenerator> => ({
   generate: vi.fn(),
+  generateWithClientCreds: vi.fn(),
 });
