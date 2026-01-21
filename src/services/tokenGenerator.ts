@@ -266,13 +266,17 @@ export class JwtTokenGenerator implements TokenGenerator {
     const eventId = uuid.v4();
     const authTime = Math.floor(this.clock.get().getTime() / 1000);
 
+    // For M2M tokens (client_credentials flow), use a service scope
+    // that distinguishes them from human user tokens.
+    // Human users have "aws.cognito.signin.user.admin" scope.
+    // M2M tokens use custom resource server scopes in production.
     const accessToken: RawToken = {
       auth_time: authTime,
       client_id: userPoolClient.ClientId,
       event_id: eventId,
       iat: authTime,
       jti: uuid.v4(),
-      scope: "aws.cognito.signin.user.admin", // TODO: scopes
+      scope: "m2m/service",
       sub: userPoolClient.ClientId,
       token_use: "access",
     };
