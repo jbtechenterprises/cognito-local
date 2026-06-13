@@ -1,0 +1,11 @@
+version: "3"
+
+vars:
+  IMAGE: ghcr.io/jbtechenterprises/cognito-local
+  TAG: 5.1.0-m2m-fix
+
+tasks:
+  docker:build:
+    desc: Build the cognito-local docker image tagged {{.IMAGE}}:{{.TAG}}
+    cmds:
+      - docker build -t {{.IMAGE}}:{{.TAG}} .
