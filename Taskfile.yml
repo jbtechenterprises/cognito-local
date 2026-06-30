@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  IMAGE: ghcr.io/jbtechenterprises/cognito-local
+  IMAGE: cognito-local
   TAG: 5.1.0-m2m-fix
 
 tasks:
