@@ -196,47 +196,37 @@ export function attachOAuth2Routes(
 
       const stored = codeStore.consume(code);
       if (!stored) {
-        return res
-          .status(400)
-          .json({
-            error: "invalid_grant",
-            error_description: "Authorization code expired or invalid",
-          });
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "Authorization code expired or invalid",
+        });
       }
 
       if (stored.clientId !== client_id) {
-        return res
-          .status(400)
-          .json({
-            error: "invalid_grant",
-            error_description: "client_id mismatch",
-          });
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "client_id mismatch",
+        });
       }
       if (stored.redirectUri !== redirect_uri) {
-        return res
-          .status(400)
-          .json({
-            error: "invalid_grant",
-            error_description: "redirect_uri mismatch",
-          });
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "redirect_uri mismatch",
+        });
       }
       if (!verifyS256(code_verifier, stored.codeChallenge)) {
-        return res
-          .status(400)
-          .json({
-            error: "invalid_grant",
-            error_description: "code_verifier does not match code_challenge",
-          });
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "code_verifier does not match code_challenge",
+        });
       }
 
       const appClient = await services.cognito.getAppClient(ctx, client_id);
       if (!appClient) {
-        return res
-          .status(400)
-          .json({
-            error: "invalid_client",
-            error_description: "Unknown client",
-          });
+        return res.status(400).json({
+          error: "invalid_client",
+          error_description: "Unknown client",
+        });
       }
 
       const userPool = await services.cognito.getUserPool(
@@ -245,12 +235,10 @@ export function attachOAuth2Routes(
       );
       const user = await userPool.getUserByUsername(ctx, stored.username);
       if (!user) {
-        return res
-          .status(400)
-          .json({
-            error: "invalid_grant",
-            error_description: "User not found",
-          });
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "User not found",
+        });
       }
 
       const userGroups = await userPool.listUserGroupMembership(ctx, user);
@@ -282,12 +270,10 @@ export function attachOAuth2Routes(
 
       const appClient = await services.cognito.getAppClient(ctx, client_id);
       if (!appClient) {
-        return res
-          .status(400)
-          .json({
-            error: "invalid_client",
-            error_description: "Unknown client",
-          });
+        return res.status(400).json({
+          error: "invalid_client",
+          error_description: "Unknown client",
+        });
       }
 
       const userPool = await services.cognito.getUserPoolForClientId(
@@ -296,12 +282,10 @@ export function attachOAuth2Routes(
       );
       const user = await userPool.getUserByRefreshToken(ctx, refresh_token);
       if (!user) {
-        return res
-          .status(400)
-          .json({
-            error: "invalid_grant",
-            error_description: "Invalid refresh token",
-          });
+        return res.status(400).json({
+          error: "invalid_grant",
+          error_description: "Invalid refresh token",
+        });
       }
 
       const userGroups = await userPool.listUserGroupMembership(ctx, user);
@@ -322,11 +306,56 @@ export function attachOAuth2Routes(
       });
     }
 
-    return res
-      .status(400)
-      .json({
-        error: "unsupported_grant_type",
-        error_description: `Unsupported grant_type: ${grant_type}`,
+    if (grant_type === "client_credentials") {
+      let { client_id, client_secret } = body;
+
+      // Cognito accepts the client credentials either in the request body or
+      // via an HTTP Basic Authorization header (client_id:client_secret).
+      const authHeader = req.get("Authorization");
+      if (authHeader?.startsWith("Basic ")) {
+        const decoded = Buffer.from(
+          authHeader.slice("Basic ".length),
+          "base64",
+        ).toString("utf8");
+        const separatorIndex = decoded.indexOf(":");
+        if (separatorIndex !== -1) {
+          client_id = decoded.slice(0, separatorIndex);
+          client_secret = decoded.slice(separatorIndex + 1);
+        }
+      }
+
+      if (!client_id) return badRequest(res, "Missing client_id");
+
+      const appClient = await services.cognito.getAppClient(ctx, client_id);
+      if (!appClient) {
+        return res.status(401).json({
+          error: "invalid_client",
+          error_description: "Unknown client",
+        });
+      }
+
+      if (appClient.ClientSecret && appClient.ClientSecret !== client_secret) {
+        return res.status(401).json({
+          error: "invalid_client",
+          error_description: "Invalid client secret",
+        });
+      }
+
+      const tokens = await services.tokenGenerator.generateWithClientCreds(
+        ctx,
+        appClient,
+      );
+
+      return res.status(200).json({
+        access_token: tokens.AccessToken,
+        token_type: "Bearer",
+        expires_in: 3600,
       });
+    }
+
+    return res.status(400).json({
+      error: "unsupported_grant_type",
+      error_description: `Unsupported grant_type: ${grant_type}`,
+    });
   });
 }

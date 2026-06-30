@@ -86,8 +86,14 @@ const applyTokenOverrides = (
 
 export interface Tokens {
   readonly AccessToken: string;
-  readonly IdToken?: string;
-  readonly RefreshToken?: string;
+  readonly IdToken: string;
+  readonly RefreshToken: string;
+}
+
+// Machine-to-machine (client_credentials) tokens only carry an access token —
+// there is no authenticated user, so no id or refresh token is issued.
+export interface ClientCredentialsTokens {
+  readonly AccessToken: string;
 }
 
 export interface TokenGenerator {
@@ -106,8 +112,8 @@ export interface TokenGenerator {
   ): Promise<Tokens>;
   generateWithClientCreds(
     ctx: Context,
-    userPoolClient: AppClient
-  ): Promise<Tokens>;
+    userPoolClient: AppClient,
+  ): Promise<ClientCredentialsTokens>;
 }
 
 function assertUnitAnyCase(unit: string): asserts unit is UnitAnyCase {
@@ -260,9 +266,9 @@ export class JwtTokenGenerator implements TokenGenerator {
   }
 
   public async generateWithClientCreds(
-    ctx: Context,
-    userPoolClient: AppClient
-  ): Promise<Tokens> {
+    _ctx: Context,
+    userPoolClient: AppClient,
+  ): Promise<ClientCredentialsTokens> {
     const eventId = uuid.v4();
     const authTime = Math.floor(this.clock.get().getTime() / 1000);
 
@@ -290,7 +296,7 @@ export class JwtTokenGenerator implements TokenGenerator {
         expiresIn: formatExpiration(
           userPoolClient.AccessTokenValidity,
           userPoolClient.TokenValidityUnits?.AccessToken ?? "hours",
-          "24h"
+          "24h",
         ),
         keyid: "CognitoLocal",
       }),

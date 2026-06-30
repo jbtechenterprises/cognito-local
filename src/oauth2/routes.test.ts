@@ -416,12 +416,98 @@ describe("OAuth2 routes", () => {
       });
     });
 
+    describe("grant_type=client_credentials", () => {
+      beforeEach(() => {
+        mockTokenGenerator.generateWithClientCreds.mockResolvedValue({
+          AccessToken: "m2m-access-token",
+        });
+      });
+
+      it("issues an access token for valid client credentials in the body", async () => {
+        const { app } = buildApp(mockCognito, mockTokenGenerator);
+
+        const res = await supertest(app)
+          .post("/oauth2/token")
+          .type("form")
+          .send({
+            grant_type: "client_credentials",
+            client_id: "test-client-id",
+          });
+
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({
+          access_token: "m2m-access-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+        });
+        expect(res.body.id_token).toBeUndefined();
+        expect(res.body.refresh_token).toBeUndefined();
+        expect(mockTokenGenerator.generateWithClientCreds).toHaveBeenCalledWith(
+          expect.anything(),
+          appClient,
+        );
+      });
+
+      it("accepts client credentials via HTTP Basic auth", async () => {
+        appClient.ClientSecret = "test-secret";
+        const { app } = buildApp(mockCognito, mockTokenGenerator);
+
+        const basic = Buffer.from("test-client-id:test-secret").toString(
+          "base64",
+        );
+        const res = await supertest(app)
+          .post("/oauth2/token")
+          .set("Authorization", `Basic ${basic}`)
+          .type("form")
+          .send({ grant_type: "client_credentials" });
+
+        expect(res.status).toBe(200);
+        expect(res.body.access_token).toBe("m2m-access-token");
+      });
+
+      it("returns 401 for an unknown client", async () => {
+        mockCognito.getAppClient.mockResolvedValue(null);
+        const { app } = buildApp(mockCognito, mockTokenGenerator);
+
+        const res = await supertest(app)
+          .post("/oauth2/token")
+          .type("form")
+          .send({
+            grant_type: "client_credentials",
+            client_id: "nope",
+          });
+
+        expect(res.status).toBe(401);
+        expect(res.body.error).toBe("invalid_client");
+      });
+
+      it("returns 401 when the client secret does not match", async () => {
+        appClient.ClientSecret = "test-secret";
+        const { app } = buildApp(mockCognito, mockTokenGenerator);
+
+        const res = await supertest(app)
+          .post("/oauth2/token")
+          .type("form")
+          .send({
+            grant_type: "client_credentials",
+            client_id: "test-client-id",
+            client_secret: "wrong-secret",
+          });
+
+        expect(res.status).toBe(401);
+        expect(res.body.error).toBe("invalid_client");
+        expect(
+          mockTokenGenerator.generateWithClientCreds,
+        ).not.toHaveBeenCalled();
+      });
+    });
+
     it("returns 400 for unsupported grant_type", async () => {
       const { app } = buildApp(mockCognito, mockTokenGenerator);
       const res = await supertest(app)
         .post("/oauth2/token")
         .type("form")
-        .send({ grant_type: "client_credentials" });
+        .send({ grant_type: "password" });
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("unsupported_grant_type");
     });
