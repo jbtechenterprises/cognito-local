@@ -1,13 +1,11 @@
-import jwt from "jsonwebtoken";
-import * as uuid from "uuid";
 import { beforeEach, describe, expect, it, type MockedObject } from "vitest";
 import { newMockCognitoService } from "../__tests__/mockCognitoService";
 import { newMockMessages } from "../__tests__/mockMessages";
 import { newMockUserPoolService } from "../__tests__/mockUserPoolService";
+import { signAccessToken } from "../__tests__/signAccessToken";
 import { TestContext } from "../__tests__/testContext";
 import * as TDB from "../__tests__/testDataBuilder";
 import { InvalidParameterError, UserNotFoundError } from "../errors";
-import PrivateKey from "../keys/cognitoLocal.private.json";
 import type { Messages, UserPoolService } from "../services";
 import { attribute, attributeValue } from "../services/userPoolService";
 import {
@@ -15,25 +13,7 @@ import {
   type GetUserAttributeVerificationCodeTarget,
 } from "./getUserAttributeVerificationCode";
 
-const validToken = jwt.sign(
-  {
-    sub: "0000-0000",
-    event_id: "0",
-    token_use: "access",
-    scope: "aws.cognito.signin.user.admin",
-    auth_time: new Date(),
-    jti: uuid.v4(),
-    client_id: "test",
-    username: "0000-0000",
-  },
-  PrivateKey.pem,
-  {
-    algorithm: "RS256",
-    issuer: `http://localhost:9229/test`,
-    expiresIn: "24h",
-    keyid: "CognitoLocal",
-  },
-);
+const validToken = signAccessToken("0000-0000");
 
 describe("GetUserAttributeVerificationCode target", () => {
   let getUserAttributeVerificationCode: GetUserAttributeVerificationCodeTarget;

@@ -6,6 +6,7 @@ import {
   MessagesService,
   TriggersService,
 } from "../services";
+import { ChallengeSessionStore } from "../services/challengeSessionStore";
 import { CognitoServiceFactoryImpl } from "../services/cognitoService";
 import { CryptoService } from "../services/crypto";
 import { StormDBDataStoreFactory } from "../services/dataStore/stormDb";
@@ -59,6 +60,7 @@ export const createDefaultServer = async (
   );
 
   const services = {
+    challengeSessionStore: new ChallengeSessionStore(),
     clock,
     cognito: cognitoClient,
     config,

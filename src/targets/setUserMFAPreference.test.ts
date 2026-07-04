@@ -1,38 +1,15 @@
-import jwt from "jsonwebtoken";
-import * as uuid from "uuid";
 import { beforeEach, describe, expect, it, type MockedObject } from "vitest";
 import { newMockCognitoService } from "../__tests__/mockCognitoService";
 import { newMockUserPoolService } from "../__tests__/mockUserPoolService";
+import { signAccessToken } from "../__tests__/signAccessToken";
 import { TestContext } from "../__tests__/testContext";
 import * as TDB from "../__tests__/testDataBuilder";
 import { InvalidParameterError } from "../errors";
-import PrivateKey from "../keys/cognitoLocal.private.json";
 import type { UserPoolService } from "../services";
 import {
   SetUserMFAPreference,
   type SetUserMFAPreferenceTarget,
 } from "./setUserMFAPreference";
-
-const signAccessToken = (sub: string) =>
-  jwt.sign(
-    {
-      sub,
-      event_id: "0",
-      token_use: "access",
-      scope: "aws.cognito.signin.user.admin",
-      auth_time: new Date(),
-      jti: uuid.v4(),
-      client_id: "test",
-      username: sub,
-    },
-    PrivateKey.pem,
-    {
-      algorithm: "RS256",
-      issuer: "http://localhost:9229/test",
-      expiresIn: "24h",
-      keyid: "CognitoLocal",
-    },
-  );
 
 describe("SetUserMFAPreference target", () => {
   let setUserMFAPreference: SetUserMFAPreferenceTarget;

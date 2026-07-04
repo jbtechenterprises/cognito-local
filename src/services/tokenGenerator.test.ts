@@ -1,4 +1,4 @@
-import jwt from "jsonwebtoken";
+import { decodeJwt } from "jose";
 import { beforeEach, describe, expect, it, type MockedObject } from "vitest";
 import { ClockFake } from "../__tests__/clockFake";
 import { newMockTriggers } from "../__tests__/mockTriggers";
@@ -53,17 +53,17 @@ describe("JwtTokenGenerator", () => {
       );
 
       // id token has new claim added
-      expect(jwt.decode(tokens.IdToken)).toMatchObject({
+      expect(decodeJwt(tokens.IdToken)).toMatchObject({
         newclaim: "value",
         email: "something else",
       });
 
       // access and refresh tokens cannot be changed by the trigger
-      expect(jwt.decode(tokens.AccessToken)).not.toMatchObject({
+      expect(decodeJwt(tokens.AccessToken)).not.toMatchObject({
         newclaim: "value",
         email: "something else",
       });
-      expect(jwt.decode(tokens.RefreshToken)).not.toMatchObject({
+      expect(decodeJwt(tokens.RefreshToken)).not.toMatchObject({
         newclaim: "value",
         email: "something else",
       });
@@ -89,11 +89,11 @@ describe("JwtTokenGenerator", () => {
       );
 
       // id token has new claim added
-      expect(jwt.decode(tokens.IdToken)).not.toHaveProperty("email");
+      expect(decodeJwt(tokens.IdToken)).not.toHaveProperty("email");
 
       // access and refresh tokens cannot be changed by the trigger
-      expect(jwt.decode(tokens.AccessToken)).not.toHaveProperty("email");
-      expect(jwt.decode(tokens.RefreshToken)).toHaveProperty(
+      expect(decodeJwt(tokens.AccessToken)).not.toHaveProperty("email");
+      expect(decodeJwt(tokens.RefreshToken)).toHaveProperty(
         "email",
         attributeValue("email", user.Attributes),
       );
@@ -122,11 +122,11 @@ describe("JwtTokenGenerator", () => {
       );
 
       // id token has new claim added
-      expect(jwt.decode(tokens.IdToken)).not.toHaveProperty("email");
+      expect(decodeJwt(tokens.IdToken)).not.toHaveProperty("email");
 
       // access and refresh tokens cannot be changed by the trigger
-      expect(jwt.decode(tokens.AccessToken)).not.toHaveProperty("email");
-      expect(jwt.decode(tokens.RefreshToken)).toHaveProperty(
+      expect(decodeJwt(tokens.AccessToken)).not.toHaveProperty("email");
+      expect(decodeJwt(tokens.RefreshToken)).toHaveProperty(
         "email",
         attributeValue("email", user.Attributes),
       );
@@ -172,7 +172,7 @@ describe("JwtTokenGenerator", () => {
           "RefreshTokens",
         );
 
-        expect(jwt.decode(tokens.IdToken)).not.toMatchObject({
+        expect(decodeJwt(tokens.IdToken)).not.toMatchObject({
           [claim]: "value",
         });
       });
@@ -194,7 +194,7 @@ describe("JwtTokenGenerator", () => {
         "RefreshTokens",
       );
 
-      expect(jwt.decode(tokens.AccessToken)).toEqual({
+      expect(decodeJwt(tokens.AccessToken)).toEqual({
         auth_time: expect.any(Number),
         client_id: userPoolClient.ClientId,
         event_id: expect.stringMatching(UUID),
@@ -208,7 +208,7 @@ describe("JwtTokenGenerator", () => {
         username: user.Username,
       });
 
-      expect(jwt.decode(tokens.IdToken)).toEqual({
+      expect(decodeJwt(tokens.IdToken)).toEqual({
         "cognito:username": user.Username,
         aud: userPoolClient.ClientId,
         auth_time: expect.any(Number),
@@ -223,7 +223,7 @@ describe("JwtTokenGenerator", () => {
         token_use: "id",
       });
 
-      expect(jwt.decode(tokens.RefreshToken)).toEqual({
+      expect(decodeJwt(tokens.RefreshToken)).toEqual({
         "cognito:username": user.Username,
         email: attributeValue("email", user.Attributes),
         exp: Math.floor(originalDate.getTime() / 1000) + SEVEN_DAYS,
@@ -255,13 +255,13 @@ describe("JwtTokenGenerator", () => {
           "RefreshTokens",
         );
 
-        expect((jwt.decode(tokens.AccessToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.AccessToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + ONE_DAY,
         );
-        expect((jwt.decode(tokens.IdToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.IdToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + ONE_DAY,
         );
-        expect((jwt.decode(tokens.RefreshToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.RefreshToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + SEVEN_DAYS,
         );
       });
@@ -291,13 +291,13 @@ describe("JwtTokenGenerator", () => {
           "RefreshTokens",
         );
 
-        expect((jwt.decode(tokens.AccessToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.AccessToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + ONE_DAY,
         );
-        expect((jwt.decode(tokens.IdToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.IdToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + ONE_DAY,
         );
-        expect((jwt.decode(tokens.RefreshToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.RefreshToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + SEVEN_DAYS,
         );
       });
@@ -323,13 +323,13 @@ describe("JwtTokenGenerator", () => {
           "RefreshTokens",
         );
 
-        expect((jwt.decode(tokens.AccessToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.AccessToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + 10 * ONE_HOUR,
         );
-        expect((jwt.decode(tokens.IdToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.IdToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + 20 * ONE_HOUR,
         );
-        expect((jwt.decode(tokens.RefreshToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.RefreshToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + 30 * ONE_DAY,
         );
       });
@@ -359,13 +359,13 @@ describe("JwtTokenGenerator", () => {
           "RefreshTokens",
         );
 
-        expect((jwt.decode(tokens.AccessToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.AccessToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + 10,
         );
-        expect((jwt.decode(tokens.IdToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.IdToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + 20 * ONE_MINUTE,
         );
-        expect((jwt.decode(tokens.RefreshToken) as any).exp).toEqual(
+        expect((decodeJwt(tokens.RefreshToken) as any).exp).toEqual(
           Math.floor(originalDate.getTime() / 1000) + 30 * ONE_HOUR,
         );
       });
@@ -397,10 +397,10 @@ describe("JwtTokenGenerator", () => {
       );
 
       expect(
-        (jwt.decode(tokens.AccessToken) as any)["cognito:groups"],
+        (decodeJwt(tokens.AccessToken) as any)["cognito:groups"],
       ).toBeUndefined();
       expect(
-        (jwt.decode(tokens.IdToken) as any)["cognito:groups"],
+        (decodeJwt(tokens.IdToken) as any)["cognito:groups"],
       ).toBeUndefined();
     });
 
@@ -427,10 +427,11 @@ describe("JwtTokenGenerator", () => {
         "RefreshTokens",
       );
 
-      expect((jwt.decode(tokens.AccessToken) as any)["cognito:groups"]).toEqual(
-        ["group1", "group2"],
-      );
-      expect((jwt.decode(tokens.IdToken) as any)["cognito:groups"]).toEqual([
+      expect((decodeJwt(tokens.AccessToken) as any)["cognito:groups"]).toEqual([
+        "group1",
+        "group2",
+      ]);
+      expect((decodeJwt(tokens.IdToken) as any)["cognito:groups"]).toEqual([
         "group1",
         "group2",
       ]);

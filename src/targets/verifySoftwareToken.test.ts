@@ -1,12 +1,15 @@
-import jwt from "jsonwebtoken";
-import * as uuid from "uuid";
 import { beforeEach, describe, expect, it, type MockedObject } from "vitest";
+import { newMockChallengeSessionStore } from "../__tests__/mockChallengeSessionStore";
 import { newMockCognitoService } from "../__tests__/mockCognitoService";
 import { newMockUserPoolService } from "../__tests__/mockUserPoolService";
+import { signAccessToken } from "../__tests__/signAccessToken";
 import { TestContext } from "../__tests__/testContext";
 import * as TDB from "../__tests__/testDataBuilder";
-import { CodeMismatchError, InvalidParameterError } from "../errors";
-import PrivateKey from "../keys/cognitoLocal.private.json";
+import {
+  CodeMismatchError,
+  InvalidParameterError,
+  NotAuthorizedError,
+} from "../errors";
 import type { UserPoolService } from "../services";
 import { generate, generateSecret } from "../services/totp";
 import {
@@ -14,34 +17,18 @@ import {
   type VerifySoftwareTokenTarget,
 } from "./verifySoftwareToken";
 
-const signAccessToken = (sub: string) =>
-  jwt.sign(
-    {
-      sub,
-      event_id: "0",
-      token_use: "access",
-      scope: "aws.cognito.signin.user.admin",
-      auth_time: new Date(),
-      jti: uuid.v4(),
-      client_id: "test",
-      username: sub,
-    },
-    PrivateKey.pem,
-    {
-      algorithm: "RS256",
-      issuer: "http://localhost:9229/test",
-      expiresIn: "24h",
-      keyid: "CognitoLocal",
-    },
-  );
-
 describe("VerifySoftwareToken target", () => {
   let verifySoftwareToken: VerifySoftwareTokenTarget;
   let mockUserPoolService: MockedObject<UserPoolService>;
+  let mockChallengeSessionStore: ReturnType<
+    typeof newMockChallengeSessionStore
+  >;
 
   beforeEach(() => {
     mockUserPoolService = newMockUserPoolService();
+    mockChallengeSessionStore = newMockChallengeSessionStore();
     verifySoftwareToken = VerifySoftwareToken({
+      challengeSessionStore: mockChallengeSessionStore,
       cognito: newMockCognitoService(mockUserPoolService),
     });
   });
@@ -99,5 +86,54 @@ describe("VerifySoftwareToken target", () => {
         UserCode: "123456",
       }),
     ).rejects.toBeInstanceOf(InvalidParameterError);
+  });
+
+  describe("via MFA_SETUP Session", () => {
+    it("rejects when the session is missing or not an MFA_SETUP session", async () => {
+      mockChallengeSessionStore.get.mockReturnValue(null);
+
+      await expect(
+        verifySoftwareToken(TestContext, {
+          Session: "sess",
+          UserCode: "123456",
+        }),
+      ).rejects.toBeInstanceOf(NotAuthorizedError);
+    });
+
+    it("verifies the code and marks the session verified", async () => {
+      const secret = generateSecret();
+      const user = TDB.user({
+        SoftwareTokenMfaConfiguration: { Secret: secret, Verified: false },
+      });
+      mockUserPoolService.getUserByUsername.mockResolvedValue(user);
+      mockChallengeSessionStore.get.mockReturnValue({
+        userPoolId: "test-pool",
+        clientId: "test-client",
+        username: user.Username,
+        challengeName: "MFA_SETUP",
+        secret,
+      });
+
+      const result = await verifySoftwareToken(TestContext, {
+        Session: "sess",
+        UserCode: generate(secret),
+      });
+
+      expect(result.Status).toBe("SUCCESS");
+      expect(result.Session).toEqual("sess");
+      expect(mockUserPoolService.saveUser).toHaveBeenCalledWith(
+        TestContext,
+        expect.objectContaining({
+          SoftwareTokenMfaConfiguration: expect.objectContaining({
+            Secret: secret,
+            Verified: true,
+          }),
+          UserMFASettingList: ["SOFTWARE_TOKEN_MFA"],
+        }),
+      );
+      expect(mockChallengeSessionStore.update).toHaveBeenCalledWith("sess", {
+        verified: true,
+      });
+    });
   });
 });

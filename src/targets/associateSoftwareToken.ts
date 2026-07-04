@@ -2,10 +2,9 @@ import type {
   AssociateSoftwareTokenRequest,
   AssociateSoftwareTokenResponse,
 } from "aws-sdk/clients/cognitoidentityserviceprovider";
-import jwt from "jsonwebtoken";
 import { InvalidParameterError, NotAuthorizedError } from "../errors";
-import type { Services } from "../services";
-import type { Token } from "../services/tokenGenerator";
+import type { Services, UserPoolService } from "../services";
+import { decodeToken } from "../services/tokenGenerator";
 import { generateSecret } from "../services/totp";
 import type { Target } from "./Target";
 
@@ -14,10 +13,16 @@ export type AssociateSoftwareTokenTarget = Target<
   AssociateSoftwareTokenResponse
 >;
 
-type AssociateSoftwareTokenServices = Pick<Services, "cognito">;
+type AssociateSoftwareTokenServices = Pick<
+  Services,
+  "challengeSessionStore" | "cognito"
+>;
 
 export const AssociateSoftwareToken =
-  ({ cognito }: AssociateSoftwareTokenServices): AssociateSoftwareTokenTarget =>
+  ({
+    challengeSessionStore,
+    cognito,
+  }: AssociateSoftwareTokenServices): AssociateSoftwareTokenTarget =>
   async (ctx, req) => {
     if (!req.AccessToken && !req.Session) {
       throw new InvalidParameterError(
@@ -25,22 +30,27 @@ export const AssociateSoftwareToken =
       );
     }
 
-    if (!req.AccessToken) {
-      throw new InvalidParameterError(
-        "AssociateSoftwareToken via Session (MFA_SETUP flow) is not supported; call with AccessToken",
-      );
+    // Resolve the target user either from an AccessToken (already-authenticated
+    // enrollment) or from an MFA_SETUP challenge Session (forced first-login
+    // enrollment).
+    let user: Awaited<ReturnType<UserPoolService["getUserByUsername"]>>;
+    let userPool: UserPoolService;
+    if (req.AccessToken) {
+      const decoded = decodeToken(req.AccessToken);
+      if (!decoded) {
+        throw new InvalidParameterError();
+      }
+      userPool = await cognito.getUserPoolForClientId(ctx, decoded.client_id);
+      user = await userPool.getUserByUsername(ctx, decoded.sub);
+    } else {
+      const session = challengeSessionStore.get(req.Session as string);
+      if (!session || session.challengeName !== "MFA_SETUP") {
+        throw new NotAuthorizedError();
+      }
+      userPool = await cognito.getUserPool(ctx, session.userPoolId);
+      user = await userPool.getUserByUsername(ctx, session.username);
     }
 
-    const decoded = jwt.decode(req.AccessToken) as Token | null;
-    if (!decoded) {
-      throw new InvalidParameterError();
-    }
-
-    const userPool = await cognito.getUserPoolForClientId(
-      ctx,
-      decoded.client_id,
-    );
-    const user = await userPool.getUserByUsername(ctx, decoded.sub);
     if (!user) {
       throw new NotAuthorizedError();
     }
@@ -54,7 +64,13 @@ export const AssociateSoftwareToken =
       },
     });
 
+    if (req.Session) {
+      challengeSessionStore.update(req.Session, { secret, verified: false });
+    }
+
     return {
       SecretCode: secret,
+      // Echo the session so the client can carry it into VerifySoftwareToken.
+      ...(req.Session ? { Session: req.Session } : {}),
     };
   };

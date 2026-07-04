@@ -2,13 +2,12 @@ import type {
   UpdateUserAttributesRequest,
   UpdateUserAttributesResponse,
 } from "aws-sdk/clients/cognitoidentityserviceprovider";
-import jwt from "jsonwebtoken";
 import { InvalidParameterError, NotAuthorizedError } from "../errors";
 import type { Messages, Services, UserPoolService } from "../services";
 import { USER_POOL_AWS_DEFAULTS } from "../services/cognitoService";
 import type { Context } from "../services/context";
 import { selectAppropriateDeliveryMethod } from "../services/messageDelivery/deliveryMethod";
-import type { Token } from "../services/tokenGenerator";
+import { decodeToken } from "../services/tokenGenerator";
 import {
   attributesAppend,
   hasUnverifiedContactAttributes,
@@ -69,7 +68,7 @@ export const UpdateUserAttributes =
     messages,
   }: UpdateUserAttributesServices): UpdateUserAttributesTarget =>
   async (ctx, req) => {
-    const decodedToken = jwt.decode(req.AccessToken) as Token | null;
+    const decodedToken = decodeToken(req.AccessToken);
     if (!decodedToken) {
       ctx.logger.info("Unable to decode token");
       throw new InvalidParameterError();

@@ -11,6 +11,7 @@ import {
 } from "../errors";
 import type { Services } from "../services";
 import type { Context } from "../services/context";
+import { userRequiresMfa, verifyMfaChallenge } from "./mfaChallenges";
 import type { Target } from "./Target";
 
 export type AdminInitiateAuthTarget = Target<
@@ -20,7 +21,12 @@ export type AdminInitiateAuthTarget = Target<
 
 type AdminInitiateAuthServices = Pick<
   Services,
-  "cognito" | "triggers" | "tokenGenerator"
+  | "challengeSessionStore"
+  | "cognito"
+  | "messages"
+  | "otp"
+  | "tokenGenerator"
+  | "triggers"
 >;
 
 const adminUserPasswordAuthFlow = async (
@@ -74,6 +80,17 @@ const adminUserPasswordAuthFlow = async (
 
   if (user.UserStatus === "UNCONFIRMED") {
     throw new UserNotConfirmedException();
+  }
+
+  if (userRequiresMfa(user, userPool.options.MfaConfiguration)) {
+    return verifyMfaChallenge(
+      ctx,
+      user,
+      req.ClientId,
+      req.ClientMetadata,
+      userPool,
+      services,
+    );
   }
 
   const userGroups = await userPool.listUserGroupMembership(ctx, user);

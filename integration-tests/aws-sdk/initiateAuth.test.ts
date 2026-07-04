@@ -1,4 +1,4 @@
-import jwt from "jsonwebtoken";
+import { decodeJwt } from "jose";
 import { describe, expect, it } from "vitest";
 import { UUID } from "../../src/__tests__/patterns";
 import { generate } from "../../src/services/totp";
@@ -189,7 +189,7 @@ describe(
         .promise();
 
       expect(
-        jwt.decode(response.AuthenticationResult?.AccessToken as string),
+        decodeJwt(response.AuthenticationResult?.AccessToken as string),
       ).toEqual({
         auth_time: expect.any(Number),
         client_id: upc.UserPoolClient?.ClientId,
@@ -205,7 +205,7 @@ describe(
       });
 
       expect(
-        jwt.decode(response.AuthenticationResult?.IdToken as string),
+        decodeJwt(response.AuthenticationResult?.IdToken as string),
       ).toEqual({
         "cognito:username": "abc",
         aud: upc.UserPoolClient?.ClientId,
@@ -222,7 +222,7 @@ describe(
       });
 
       expect(
-        jwt.decode(response.AuthenticationResult?.RefreshToken as string),
+        decodeJwt(response.AuthenticationResult?.RefreshToken as string),
       ).toEqual({
         "cognito:username": "abc",
         email: "example@example.com",
@@ -296,7 +296,7 @@ describe(
         .promise();
 
       expect(
-        jwt.decode(
+        decodeJwt(
           refreshTokenLoginResponse.AuthenticationResult?.AccessToken as string,
         ),
       ).toEqual({
@@ -314,7 +314,7 @@ describe(
       });
 
       expect(
-        jwt.decode(
+        decodeJwt(
           refreshTokenLoginResponse.AuthenticationResult?.IdToken as string,
         ),
       ).toEqual({

@@ -1,8 +1,8 @@
+import { createPrivateKey } from "node:crypto";
 import type { StringMap } from "aws-lambda/trigger/cognito-user-pool-trigger/_common";
 import type { GroupOverrideDetails } from "aws-lambda/trigger/cognito-user-pool-trigger/pre-token-generation";
 import type { TimeUnitsType } from "aws-sdk/clients/cognitoidentityserviceprovider";
-import jwt, { type SignOptions } from "jsonwebtoken";
-import type { StringValue, UnitAnyCase } from "ms";
+import { decodeJwt, type JWTPayload, SignJWT } from "jose";
 import * as uuid from "uuid";
 import PrivateKey from "../keys/cognitoLocal.private.json";
 import type { AppClient } from "./appClient";
@@ -116,24 +116,67 @@ export interface TokenGenerator {
   ): Promise<ClientCredentialsTokens>;
 }
 
-function assertUnitAnyCase(unit: string): asserts unit is UnitAnyCase {
-  if (!["seconds", "minutes", "hours", "days"].includes(unit)) {
-    throw new Error(`Invalid unit: ${unit}`);
-  }
-}
+const UNIT_SECONDS: Record<string, number> = {
+  seconds: 1,
+  minutes: 60,
+  hours: 60 * 60,
+  days: 24 * 60 * 60,
+};
 
-const formatExpiration = (
+const ONE_DAY_SECONDS = 24 * 60 * 60;
+const SEVEN_DAYS_SECONDS = 7 * ONE_DAY_SECONDS;
+
+const expirationSeconds = (
   duration: number | undefined,
   unit: TimeUnitsType,
-  fallback: StringValue,
-): StringValue => {
+  fallbackSeconds: number,
+): number => {
   if (duration === undefined) {
-    return fallback;
+    return fallbackSeconds;
   }
 
-  assertUnitAnyCase(unit);
+  const unitSeconds = UNIT_SECONDS[unit];
+  if (unitSeconds === undefined) {
+    throw new Error(`Invalid unit: ${unit}`);
+  }
 
-  return `${duration}${unit}`;
+  return duration * unitSeconds;
+};
+
+const privateKey = createPrivateKey(PrivateKey.pem);
+
+const signToken = async (
+  payload: RawToken,
+  opts: {
+    issuer: string;
+    expiresAt: number;
+    audience?: string;
+    keyid?: string;
+  },
+): Promise<string> => {
+  const signer = new SignJWT(payload as JWTPayload).setProtectedHeader(
+    opts.keyid ? { alg: "RS256", kid: opts.keyid } : { alg: "RS256" },
+  );
+  signer.setIssuer(opts.issuer);
+  signer.setExpirationTime(opts.expiresAt);
+  if (opts.audience !== undefined) {
+    signer.setAudience(opts.audience);
+  }
+
+  return signer.sign(privateKey);
+};
+
+/**
+ * decodeToken decodes a JWT's claims without verifying its signature — the local
+ * equivalent of the previous jwt.decode usage. Returns null on malformed input
+ * so callers can surface a Cognito-shaped error instead of throwing.
+ */
+export const decodeToken = (token: string): Token | null => {
+  try {
+    return decodeJwt(token) as unknown as Token;
+  } catch {
+    return null;
+  }
 };
 
 export class JwtTokenGenerator implements TokenGenerator {
@@ -221,46 +264,48 @@ export class JwtTokenGenerator implements TokenGenerator {
     const issuer = `${this.tokenConfig.IssuerDomain}/${userPoolClient.UserPoolId}`;
 
     return {
-      AccessToken: jwt.sign(accessToken, PrivateKey.pem, {
-        algorithm: "RS256",
+      AccessToken: await signToken(accessToken, {
         issuer,
-        expiresIn: formatExpiration(
-          userPoolClient.AccessTokenValidity,
-          userPoolClient.TokenValidityUnits?.AccessToken ?? "hours",
-          "24h",
-        ),
+        expiresAt:
+          authTime +
+          expirationSeconds(
+            userPoolClient.AccessTokenValidity,
+            userPoolClient.TokenValidityUnits?.AccessToken ?? "hours",
+            ONE_DAY_SECONDS,
+          ),
         keyid: "CognitoLocal",
-      } satisfies SignOptions),
-      IdToken: jwt.sign(idToken, PrivateKey.pem, {
-        algorithm: "RS256",
+      }),
+      IdToken: await signToken(idToken, {
         issuer,
-        expiresIn: formatExpiration(
-          userPoolClient.IdTokenValidity,
-          userPoolClient.TokenValidityUnits?.IdToken ?? "hours",
-          "24h",
-        ),
+        expiresAt:
+          authTime +
+          expirationSeconds(
+            userPoolClient.IdTokenValidity,
+            userPoolClient.TokenValidityUnits?.IdToken ?? "hours",
+            ONE_DAY_SECONDS,
+          ),
         audience: userPoolClient.ClientId,
         keyid: "CognitoLocal",
-      } satisfies SignOptions),
+      }),
       // this content is for debugging purposes only
       // in reality token payload is encrypted and uses different algorithm
-      RefreshToken: jwt.sign(
+      RefreshToken: await signToken(
         {
           "cognito:username": user.Username,
           email: attributeValue("email", user.Attributes),
           iat: authTime,
           jti: uuid.v4(),
         },
-        PrivateKey.pem,
         {
-          algorithm: "RS256",
           issuer,
-          expiresIn: formatExpiration(
-            userPoolClient.RefreshTokenValidity,
-            userPoolClient.TokenValidityUnits?.RefreshToken ?? "days",
-            "7d",
-          ),
-        } satisfies SignOptions,
+          expiresAt:
+            authTime +
+            expirationSeconds(
+              userPoolClient.RefreshTokenValidity,
+              userPoolClient.TokenValidityUnits?.RefreshToken ?? "days",
+              SEVEN_DAYS_SECONDS,
+            ),
+        },
       ),
     };
   }
@@ -289,17 +334,18 @@ export class JwtTokenGenerator implements TokenGenerator {
 
     const issuer = `${this.tokenConfig.IssuerDomain}/${userPoolClient.UserPoolId}`;
 
-    return await Promise.resolve({
-      AccessToken: jwt.sign(accessToken, PrivateKey.pem, {
-        algorithm: "RS256",
+    return {
+      AccessToken: await signToken(accessToken, {
         issuer,
-        expiresIn: formatExpiration(
-          userPoolClient.AccessTokenValidity,
-          userPoolClient.TokenValidityUnits?.AccessToken ?? "hours",
-          "24h",
-        ),
+        expiresAt:
+          authTime +
+          expirationSeconds(
+            userPoolClient.AccessTokenValidity,
+            userPoolClient.TokenValidityUnits?.AccessToken ?? "hours",
+            ONE_DAY_SECONDS,
+          ),
         keyid: "CognitoLocal",
       }),
-    });
+    };
   }
 }

@@ -1,46 +1,29 @@
-import jwt from "jsonwebtoken";
-import * as uuid from "uuid";
 import { beforeEach, describe, expect, it, type MockedObject } from "vitest";
+import { newMockChallengeSessionStore } from "../__tests__/mockChallengeSessionStore";
 import { newMockCognitoService } from "../__tests__/mockCognitoService";
 import { newMockUserPoolService } from "../__tests__/mockUserPoolService";
+import { signAccessToken } from "../__tests__/signAccessToken";
 import { TestContext } from "../__tests__/testContext";
 import * as TDB from "../__tests__/testDataBuilder";
-import { InvalidParameterError } from "../errors";
-import PrivateKey from "../keys/cognitoLocal.private.json";
+import { InvalidParameterError, NotAuthorizedError } from "../errors";
 import type { UserPoolService } from "../services";
 import {
   AssociateSoftwareToken,
   type AssociateSoftwareTokenTarget,
 } from "./associateSoftwareToken";
 
-const signAccessToken = (sub: string) =>
-  jwt.sign(
-    {
-      sub,
-      event_id: "0",
-      token_use: "access",
-      scope: "aws.cognito.signin.user.admin",
-      auth_time: new Date(),
-      jti: uuid.v4(),
-      client_id: "test",
-      username: sub,
-    },
-    PrivateKey.pem,
-    {
-      algorithm: "RS256",
-      issuer: "http://localhost:9229/test",
-      expiresIn: "24h",
-      keyid: "CognitoLocal",
-    },
-  );
-
 describe("AssociateSoftwareToken target", () => {
   let associateSoftwareToken: AssociateSoftwareTokenTarget;
   let mockUserPoolService: MockedObject<UserPoolService>;
+  let mockChallengeSessionStore: ReturnType<
+    typeof newMockChallengeSessionStore
+  >;
 
   beforeEach(() => {
     mockUserPoolService = newMockUserPoolService();
+    mockChallengeSessionStore = newMockChallengeSessionStore();
     associateSoftwareToken = AssociateSoftwareToken({
+      challengeSessionStore: mockChallengeSessionStore,
       cognito: newMockCognitoService(mockUserPoolService),
     });
   });
@@ -70,5 +53,47 @@ describe("AssociateSoftwareToken target", () => {
         },
       }),
     );
+  });
+
+  describe("via MFA_SETUP Session", () => {
+    it("rejects when the session is missing or not an MFA_SETUP session", async () => {
+      mockChallengeSessionStore.get.mockReturnValue(null);
+
+      await expect(
+        associateSoftwareToken(TestContext, { Session: "sess" }),
+      ).rejects.toBeInstanceOf(NotAuthorizedError);
+    });
+
+    it("generates a secret and threads the session forward", async () => {
+      const user = TDB.user();
+      mockUserPoolService.getUserByUsername.mockResolvedValue(user);
+      mockChallengeSessionStore.get.mockReturnValue({
+        userPoolId: "test-pool",
+        clientId: "test-client",
+        username: user.Username,
+        challengeName: "MFA_SETUP",
+      });
+
+      const result = await associateSoftwareToken(TestContext, {
+        Session: "sess",
+      });
+
+      expect(result.SecretCode).toMatch(/^[A-Z2-7]+=*$/);
+      expect(result.Session).toEqual("sess");
+      expect(mockUserPoolService.saveUser).toHaveBeenCalledWith(
+        TestContext,
+        expect.objectContaining({
+          Username: user.Username,
+          SoftwareTokenMfaConfiguration: {
+            Secret: result.SecretCode,
+            Verified: false,
+          },
+        }),
+      );
+      expect(mockChallengeSessionStore.update).toHaveBeenCalledWith("sess", {
+        secret: result.SecretCode,
+        verified: false,
+      });
+    });
   });
 });

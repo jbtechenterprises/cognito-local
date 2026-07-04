@@ -8,6 +8,7 @@ import {
   vi,
 } from "vitest";
 import { ClockFake } from "../__tests__/clockFake";
+import { newMockChallengeSessionStore } from "../__tests__/mockChallengeSessionStore";
 import { newMockCognitoService } from "../__tests__/mockCognitoService";
 import { newMockMessages } from "../__tests__/mockMessages";
 import { newMockTokenGenerator } from "../__tests__/mockTokenGenerator";
@@ -21,6 +22,7 @@ import {
   NotAuthorizedError,
 } from "../errors";
 import type { Messages, Triggers, UserPoolService } from "../services";
+import type { ChallengeSessionStore } from "../services/challengeSessionStore";
 import type { TokenGenerator } from "../services/tokenGenerator";
 import { generateSecret, generate as genTotp } from "../services/totp";
 import {
@@ -37,6 +39,7 @@ describe("RespondToAuthChallenge target", () => {
   let mockUserPoolService: MockedObject<UserPoolService>;
   let mockMessages: MockedObject<Messages>;
   let mockOtp: Mock<() => string>;
+  let mockChallengeSessionStore: MockedObject<ChallengeSessionStore>;
   let clock: ClockFake;
   const userPoolClient = TDB.appClient();
 
@@ -49,11 +52,13 @@ describe("RespondToAuthChallenge target", () => {
     });
     mockMessages = newMockMessages();
     mockOtp = vi.fn().mockReturnValue("123456");
+    mockChallengeSessionStore = newMockChallengeSessionStore();
 
     const mockCognitoService = newMockCognitoService(mockUserPoolService);
     mockCognitoService.getAppClient.mockResolvedValue(userPoolClient);
 
     respondToAuthChallenge = RespondToAuthChallenge({
+      challengeSessionStore: mockChallengeSessionStore,
       clock,
       cognito: mockCognitoService,
       messages: mockMessages,
@@ -472,6 +477,78 @@ describe("RespondToAuthChallenge target", () => {
           },
         }),
       ).rejects.toBeInstanceOf(InvalidParameterError);
+    });
+  });
+
+  describe("MFA_SETUP challenge", () => {
+    const user = TDB.user();
+
+    beforeEach(() => {
+      mockUserPoolService.getUserByUsername.mockResolvedValue(user);
+    });
+
+    it("issues tokens once the software token has been verified", async () => {
+      mockChallengeSessionStore.get.mockReturnValue({
+        userPoolId: userPoolClient.UserPoolId,
+        clientId: userPoolClient.ClientId,
+        username: user.Username,
+        challengeName: "MFA_SETUP",
+        verified: true,
+      });
+      mockUserPoolService.listUserGroupMembership.mockResolvedValue([]);
+      mockTokenGenerator.generate.mockResolvedValue({
+        AccessToken: "a",
+        IdToken: "i",
+        RefreshToken: "r",
+      });
+
+      const result = await respondToAuthChallenge(TestContext, {
+        ClientId: userPoolClient.ClientId,
+        ChallengeName: "MFA_SETUP",
+        Session: "sess",
+        ChallengeResponses: {
+          USERNAME: user.Username,
+        },
+      });
+
+      expect(result.AuthenticationResult?.AccessToken).toEqual("a");
+      expect(mockChallengeSessionStore.delete).toHaveBeenCalledWith("sess");
+    });
+
+    it("rejects when the session has not been verified", async () => {
+      mockChallengeSessionStore.get.mockReturnValue({
+        userPoolId: userPoolClient.UserPoolId,
+        clientId: userPoolClient.ClientId,
+        username: user.Username,
+        challengeName: "MFA_SETUP",
+        verified: false,
+      });
+
+      await expect(
+        respondToAuthChallenge(TestContext, {
+          ClientId: userPoolClient.ClientId,
+          ChallengeName: "MFA_SETUP",
+          Session: "sess",
+          ChallengeResponses: {
+            USERNAME: user.Username,
+          },
+        }),
+      ).rejects.toBeInstanceOf(InvalidParameterError);
+    });
+
+    it("rejects when the session is missing or expired", async () => {
+      mockChallengeSessionStore.get.mockReturnValue(null);
+
+      await expect(
+        respondToAuthChallenge(TestContext, {
+          ClientId: userPoolClient.ClientId,
+          ChallengeName: "MFA_SETUP",
+          Session: "sess",
+          ChallengeResponses: {
+            USERNAME: user.Username,
+          },
+        }),
+      ).rejects.toBeInstanceOf(NotAuthorizedError);
     });
   });
 });

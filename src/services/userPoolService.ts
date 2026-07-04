@@ -127,6 +127,28 @@ export interface User {
     Verified: boolean;
     FriendlyDeviceName?: string;
   };
+
+  /**
+   * WebAuthnCredentials stores the user's registered passkeys. cognito-local
+   * emulates the WebAuthn flow shape (challenge issuance, credential storage,
+   * assertion completion) without performing real FIDO2 attestation/assertion
+   * signature verification — enough for local dev and integration tests.
+   */
+  WebAuthnCredentials?: WebAuthnCredential[];
+}
+
+export interface WebAuthnCredential {
+  CredentialId: string;
+  FriendlyCredentialName?: string;
+  RelyingPartyId?: string;
+  AuthenticatorAttachment?: string;
+  CreatedAt: Date;
+
+  /**
+   * The opaque public-key/attestation blob supplied by the client, stored
+   * verbatim. Not cryptographically verified.
+   */
+  PublicKey?: string;
 }
 
 export interface Group {

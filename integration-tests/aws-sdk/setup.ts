@@ -15,6 +15,7 @@ import {
   MessagesService,
   TriggersService,
 } from "../../src/services";
+import { ChallengeSessionStore } from "../../src/services/challengeSessionStore";
 import { CognitoServiceFactoryImpl } from "../../src/services/cognitoService";
 import { CryptoService } from "../../src/services/crypto";
 import type { DataStoreFactory } from "../../src/services/dataStore/factory";
@@ -72,6 +73,7 @@ export const withCognitoSdk =
 
       fakeMessageDeliveryService = new FakeMessageDeliveryService();
       const services = {
+        challengeSessionStore: new ChallengeSessionStore(),
         clock,
         cognito: cognitoClient,
         config: DefaultConfig,

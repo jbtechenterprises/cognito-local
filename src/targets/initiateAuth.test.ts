@@ -7,6 +7,7 @@ import {
   type MockedObject,
   vi,
 } from "vitest";
+import { newMockChallengeSessionStore } from "../__tests__/mockChallengeSessionStore";
 import { newMockCognitoService } from "../__tests__/mockCognitoService";
 import { newMockMessages } from "../__tests__/mockMessages";
 import { newMockTokenGenerator } from "../__tests__/mockTokenGenerator";
@@ -22,6 +23,7 @@ import {
   PasswordResetRequiredError,
 } from "../errors";
 import type { Messages, Triggers, UserPoolService } from "../services";
+import type { ChallengeSessionStore } from "../services/challengeSessionStore";
 import type { TokenGenerator } from "../services/tokenGenerator";
 import { attributesToRecord, type User } from "../services/userPoolService";
 import { InitiateAuth, type InitiateAuthTarget } from "./initiateAuth";
@@ -33,6 +35,7 @@ describe("InitiateAuth target", () => {
   let mockOtp: Mock<() => string>;
   let mockTriggers: MockedObject<Triggers>;
   let mockTokenGenerator: MockedObject<TokenGenerator>;
+  let mockChallengeSessionStore: MockedObject<ChallengeSessionStore>;
   const userPoolClient = TDB.appClient();
 
   beforeEach(() => {
@@ -43,11 +46,13 @@ describe("InitiateAuth target", () => {
     mockOtp = vi.fn().mockReturnValue("123456");
     mockTriggers = newMockTriggers();
     mockTokenGenerator = newMockTokenGenerator();
+    mockChallengeSessionStore = newMockChallengeSessionStore();
 
     const mockCognitoService = newMockCognitoService(mockUserPoolService);
     mockCognitoService.getAppClient.mockResolvedValue(userPoolClient);
 
     initiateAuth = InitiateAuth({
+      challengeSessionStore: mockChallengeSessionStore,
       cognito: mockCognitoService,
       messages: mockMessages,
       otp: mockOtp,
@@ -250,23 +255,51 @@ describe("InitiateAuth target", () => {
         });
 
         describe("when user doesn't have MFA configured", () => {
-          const user = TDB.user({ MFAOptions: undefined });
+          const user = TDB.user({
+            MFAOptions: undefined,
+            UserMFASettingList: undefined,
+          });
 
           beforeEach(() => {
             mockUserPoolService.getUserByUsername.mockResolvedValue(user);
+            mockChallengeSessionStore.create.mockReturnValue("session-id");
           });
 
-          it("throws an exception", async () => {
-            await expect(
-              initiateAuth(TestContext, {
-                ClientId: userPoolClient.ClientId,
-                AuthFlow: "USER_PASSWORD_AUTH",
-                AuthParameters: {
-                  USERNAME: user.Username,
-                  PASSWORD: user.Password,
-                },
-              }),
-            ).rejects.toBeInstanceOf(NotAuthorizedError);
+          it("forces enrollment with an MFA_SETUP challenge", async () => {
+            const output = await initiateAuth(TestContext, {
+              ClientId: userPoolClient.ClientId,
+              AuthFlow: "USER_PASSWORD_AUTH",
+              AuthParameters: {
+                USERNAME: user.Username,
+                PASSWORD: user.Password,
+              },
+            });
+
+            expect(output.ChallengeName).toEqual("MFA_SETUP");
+            expect(output.Session).toEqual("session-id");
+            expect(output.ChallengeParameters).toEqual({
+              USER_ID_FOR_SRP: user.Username,
+              MFAS_CAN_SETUP: JSON.stringify(["SOFTWARE_TOKEN_MFA"]),
+            });
+            expect(output.AuthenticationResult).toBeUndefined();
+          });
+
+          it("stores an MFA_SETUP challenge session", async () => {
+            await initiateAuth(TestContext, {
+              ClientId: userPoolClient.ClientId,
+              AuthFlow: "USER_PASSWORD_AUTH",
+              AuthParameters: {
+                USERNAME: user.Username,
+                PASSWORD: user.Password,
+              },
+            });
+
+            expect(mockChallengeSessionStore.create).toHaveBeenCalledWith({
+              userPoolId: userPoolClient.UserPoolId,
+              clientId: userPoolClient.ClientId,
+              username: user.Username,
+              challengeName: "MFA_SETUP",
+            });
           });
         });
       });

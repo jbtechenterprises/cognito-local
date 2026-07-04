@@ -1,5 +1,4 @@
 import type {
-  DeliveryMediumType,
   InitiateAuthRequest,
   InitiateAuthResponse,
 } from "aws-sdk/clients/cognitoidentityserviceprovider";
@@ -15,12 +14,8 @@ import {
 import type { Services, UserPoolService } from "../services";
 import type { AppClient } from "../services/appClient";
 import type { Context } from "../services/context";
-import {
-  attributesToRecord,
-  attributeValue,
-  type MFAOption,
-  type User,
-} from "../services/userPoolService";
+import { attributesToRecord, type User } from "../services/userPoolService";
+import { userRequiresMfa, verifyMfaChallenge } from "./mfaChallenges";
 import type { Target } from "./Target";
 
 export type InitiateAuthTarget = Target<
@@ -30,123 +25,13 @@ export type InitiateAuthTarget = Target<
 
 type InitiateAuthServices = Pick<
   Services,
-  "cognito" | "messages" | "otp" | "tokenGenerator" | "triggers"
+  | "challengeSessionStore"
+  | "cognito"
+  | "messages"
+  | "otp"
+  | "tokenGenerator"
+  | "triggers"
 >;
-
-const smsMfaChallenge = async (
-  ctx: Context,
-  user: User,
-  req: InitiateAuthRequest,
-  userPool: UserPoolService,
-  services: InitiateAuthServices,
-): Promise<InitiateAuthResponse> => {
-  const smsMfaOption = user.MFAOptions?.find(
-    (x): x is MFAOption & { DeliveryMedium: DeliveryMediumType } =>
-      x.DeliveryMedium === "SMS",
-  );
-  if (!smsMfaOption) {
-    throw new UnsupportedError("SMS_MFA without SMS MFAOption");
-  }
-
-  const deliveryDestination = attributeValue(
-    smsMfaOption.AttributeName,
-    user.Attributes,
-  );
-  if (!deliveryDestination) {
-    throw new UnsupportedError(`SMS_MFA without ${smsMfaOption.AttributeName}`);
-  }
-
-  const code = services.otp();
-  await services.messages.deliver(
-    ctx,
-    "Authentication",
-    req.ClientId,
-    userPool.options.Id,
-    user,
-    code,
-    req.ClientMetadata,
-    {
-      DeliveryMedium: smsMfaOption.DeliveryMedium,
-      AttributeName: smsMfaOption.AttributeName,
-      Destination: deliveryDestination,
-    },
-  );
-
-  await userPool.saveUser(ctx, {
-    ...user,
-    MFACode: code,
-  });
-
-  return {
-    ChallengeName: "SMS_MFA",
-    ChallengeParameters: {
-      CODE_DELIVERY_DELIVERY_MEDIUM: "SMS",
-      CODE_DELIVERY_DESTINATION: deliveryDestination,
-      USER_ID_FOR_SRP: user.Username,
-    },
-    Session: v4(),
-  };
-};
-
-const softwareTokenMfaChallenge = (user: User): InitiateAuthResponse => ({
-  ChallengeName: "SOFTWARE_TOKEN_MFA",
-  ChallengeParameters: {
-    USER_ID_FOR_SRP: user.Username,
-    ...(user.SoftwareTokenMfaConfiguration?.FriendlyDeviceName
-      ? {
-          FRIENDLY_DEVICE_NAME:
-            user.SoftwareTokenMfaConfiguration.FriendlyDeviceName,
-        }
-      : {}),
-  },
-  Session: v4(),
-});
-
-const enabledMfaMethods = (
-  user: User,
-): readonly ("SMS_MFA" | "SOFTWARE_TOKEN_MFA")[] => {
-  const explicit = user.UserMFASettingList ?? [];
-  const legacy =
-    explicit.length === 0 &&
-    (user.MFAOptions ?? []).some((o) => o.DeliveryMedium === "SMS")
-      ? ["SMS_MFA"]
-      : [];
-  const methods = new Set<string>([...explicit, ...legacy]);
-
-  const result: ("SMS_MFA" | "SOFTWARE_TOKEN_MFA")[] = [];
-  if (methods.has("SMS_MFA")) result.push("SMS_MFA");
-  if (methods.has("SOFTWARE_TOKEN_MFA")) result.push("SOFTWARE_TOKEN_MFA");
-  return result;
-};
-
-const verifyMfaChallenge = async (
-  ctx: Context,
-  user: User,
-  req: InitiateAuthRequest,
-  userPool: UserPoolService,
-  services: InitiateAuthServices,
-): Promise<InitiateAuthResponse> => {
-  const methods = enabledMfaMethods(user);
-  if (methods.length === 0) {
-    throw new NotAuthorizedError();
-  }
-
-  if (methods.length > 1) {
-    return {
-      ChallengeName: "SELECT_MFA_TYPE",
-      ChallengeParameters: {
-        USER_ID_FOR_SRP: user.Username,
-        MFAS_CAN_CHOOSE: JSON.stringify(methods),
-      },
-      Session: v4(),
-    };
-  }
-
-  if (methods[0] === "SOFTWARE_TOKEN_MFA") {
-    return softwareTokenMfaChallenge(user);
-  }
-  return smsMfaChallenge(ctx, user, req, userPool, services);
-};
 
 const verifyPasswordChallenge = async (
   ctx: Context,
@@ -243,14 +128,15 @@ const userPasswordAuthFlow = async (
     throw new UserNotConfirmedException();
   }
 
-  const userHasMfa =
-    (user.MFAOptions ?? []).length > 0 ||
-    (user.UserMFASettingList ?? []).length > 0;
-  if (
-    userPool.options.MfaConfiguration === "ON" ||
-    (userPool.options.MfaConfiguration !== "OFF" && userHasMfa)
-  ) {
-    return verifyMfaChallenge(ctx, user, req, userPool, services);
+  if (userRequiresMfa(user, userPool.options.MfaConfiguration)) {
+    return verifyMfaChallenge(
+      ctx,
+      user,
+      req.ClientId,
+      req.ClientMetadata,
+      userPool,
+      services,
+    );
   }
 
   if (services.triggers.enabled("PostAuthentication")) {
