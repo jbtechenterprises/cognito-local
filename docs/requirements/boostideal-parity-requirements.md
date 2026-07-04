@@ -15,6 +15,35 @@
 
 ---
 
+## ⚡ UPDATE 2026-07-04 — most gaps are now CLOSED in this fork
+
+Commit `2c4ca1d` ("feat(auth): forced MFA_SETUP enrollment, admin auth/MFA flows, WebAuthn, global sign-out")
+landed and the `cognito-local:5.3.0-m2m` image was rebuilt with it. The rows below marked ❌/🟡 for
+these are now **✅ in the fork**:
+
+- **Section F — forced `MFA_SETUP` enrollment: ✅ RESOLVED.** `InitiateAuth` now returns the `MFA_SETUP`
+  challenge for an unenrolled user in an `MfaConfiguration=ON` pool; `RespondToAuthChallenge` handles
+  `MFA_SETUP`; Session-based `AssociateSoftwareToken`/`VerifySoftwareToken` work. (Boostideal proves this
+  end-to-end in a forced-enrollment integration test.)
+- **Section G — WebAuthn/passkeys: ✅ ADDED.** `startWebAuthnRegistration` / `completeWebAuthnRegistration`
+  targets now exist.
+- **Section H / P3 — `globalSignOut` / `adminUserGlobalSignOut`, `adminSetUserMFAPreference`,
+  `adminRespondToAuthChallenge`: ✅ ADDED.**
+
+**Only remaining gap:** `createResourceServer` — still **❌ MISSING**. It is **non-fatal** in the boostideal
+onboarding UoW (logged, provisioning continues, integration tests pass), but the emulator returns
+`Unsupported: CreateResourceServer` at runtime. Add it for full parity. (This corrects the table below,
+which listed `CreateResourceServer` as ✅ FULL — it is not.)
+
+Net: the fork is at effectively full parity for boostideal's needs except `createResourceServer`.
+
+**Addendum (2026-07-04):** `createResourceServer` has now been implemented
+(`src/targets/createResourceServer.ts`, registered in `src/targets/targets.ts`) and the
+`cognito-local:5.3.0-m2m` image rebuilt with it. The fork is now at **full parity** for
+boostideal's needs — no remaining gaps.
+
+---
+
 ## TL;DR — the one thing to do first
 
 The only gap blocking us **today** is not a missing feature — it's a **stale image**.

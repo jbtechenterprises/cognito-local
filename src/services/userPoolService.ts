@@ -2,6 +2,7 @@ import type {
   AttributeListType,
   AttributeType,
   MFAOptionListType,
+  ResourceServerScopeListType,
   SchemaAttributesListType,
   StringType,
   UserMFASettingListType,
@@ -183,6 +184,21 @@ export interface Group {
   members?: readonly string[];
 }
 
+export interface ResourceServer {
+  /**
+   * A unique resource server identifier for the resource server. This could be an HTTPS endpoint where the resource server is located, such as https://my-weather-api.example.com.
+   */
+  Identifier: string;
+  /**
+   * A friendly name for the resource server.
+   */
+  Name: string;
+  /**
+   * A list of scopes. Each scope is a key-value map with the keys name and description.
+   */
+  Scopes?: ResourceServerScopeListType;
+}
+
 // just use the types from the sdk, but make Id required
 export type UserPool = UserPoolType & {
   Id: string;
@@ -200,6 +216,10 @@ export interface UserPoolService {
   deleteGroup(ctx: Context, group: Group): Promise<void>;
   deleteUser(ctx: Context, user: User): Promise<void>;
   getGroupByGroupName(ctx: Context, groupName: string): Promise<Group | null>;
+  getResourceServerByIdentifier(
+    ctx: Context,
+    identifier: string,
+  ): Promise<ResourceServer | null>;
   getUserByUsername(ctx: Context, username: string): Promise<User | null>;
   getUserByRefreshToken(
     ctx: Context,
@@ -214,6 +234,10 @@ export interface UserPoolService {
   updateOptions(ctx: Context, userPool: UserPool): Promise<void>;
   removeUserFromGroup(ctx: Context, group: Group, user: User): Promise<void>;
   saveGroup(ctx: Context, group: Group): Promise<void>;
+  saveResourceServer(
+    ctx: Context,
+    resourceServer: ResourceServer,
+  ): Promise<void>;
   saveUser(ctx: Context, user: User): Promise<void>;
   storeRefreshToken(
     ctx: Context,
@@ -300,6 +324,19 @@ export class UserPoolServiceImpl implements UserPoolService {
   ): Promise<Group | null> {
     ctx.logger.debug("UserPoolServiceImpl.getGroupByGroupName");
     const result = await this.dataStore.get<Group>(ctx, ["Groups", groupName]);
+
+    return result ?? null;
+  }
+
+  public async getResourceServerByIdentifier(
+    ctx: Context,
+    identifier: string,
+  ): Promise<ResourceServer | null> {
+    ctx.logger.debug("UserPoolServiceImpl.getResourceServerByIdentifier");
+    const result = await this.dataStore.get<ResourceServer>(ctx, [
+      "ResourceServers",
+      identifier,
+    ]);
 
     return result ?? null;
   }
@@ -499,6 +536,22 @@ export class UserPoolServiceImpl implements UserPoolService {
     ctx.logger.debug({ group }, "UserPoolServiceImpl.saveGroup");
 
     await this.dataStore.set<Group>(ctx, ["Groups", group.GroupName], group);
+  }
+
+  async saveResourceServer(
+    ctx: Context,
+    resourceServer: ResourceServer,
+  ): Promise<void> {
+    ctx.logger.debug(
+      { resourceServer },
+      "UserPoolServiceImpl.saveResourceServer",
+    );
+
+    await this.dataStore.set<ResourceServer>(
+      ctx,
+      ["ResourceServers", resourceServer.Identifier],
+      resourceServer,
+    );
   }
 
   async listUserGroupMembership(

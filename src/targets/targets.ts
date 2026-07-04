@@ -21,6 +21,7 @@ import { CompleteWebAuthnRegistration } from "./completeWebAuthnRegistration";
 import { ConfirmForgotPassword } from "./confirmForgotPassword";
 import { ConfirmSignUp } from "./confirmSignUp";
 import { CreateGroup } from "./createGroup";
+import { CreateResourceServer } from "./createResourceServer";
 import { CreateUserPool } from "./createUserPool";
 import { CreateUserPoolClient } from "./createUserPoolClient";
 import { DeleteGroup } from "./deleteGroup";
@@ -81,6 +82,7 @@ export const Targets = {
   ConfirmForgotPassword,
   ConfirmSignUp,
   CreateGroup,
+  CreateResourceServer,
   CreateUserPool,
   CreateUserPoolClient,
   DeleteGroup,

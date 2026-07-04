@@ -64,7 +64,7 @@ A _Good Enough_ offline emulator for [Amazon Cognito](https://aws.amazon.com/cog
 | ConfirmSignUp                    | 🕒 (partial support) |
 | CreateGroup                      | ✅                   |
 | CreateIdentityProvider           | ❌                   |
-| CreateResourceServer             | ❌                   |
+| CreateResourceServer             | ✅                   |
 | CreateUserImportJob              | ❌                   |
 | CreateUserPool                   | ✅                   |
 | CreateUserPoolClient             | ✅                   |

@@ -1,11 +1,17 @@
 import type {
   GroupType,
+  ResourceServerType,
   UserPoolClientType,
   UserPoolType,
   UserType,
 } from "aws-sdk/clients/cognitoidentityserviceprovider";
 import type { AppClient } from "../services/appClient";
-import type { Group, User, UserPool } from "../services/userPoolService";
+import type {
+  Group,
+  ResourceServer,
+  User,
+  UserPool,
+} from "../services/userPoolService";
 
 export const appClientToResponseObject = (
   appClient: AppClient,
@@ -54,6 +60,15 @@ export const groupToResponseObject =
     LastModifiedDate: group.LastModifiedDate,
     Precedence: group.Precedence,
     RoleArn: group.RoleArn,
+    UserPoolId: userPoolId,
+  });
+
+export const resourceServerToResponseObject =
+  (userPoolId: string) =>
+  (resourceServer: ResourceServer): ResourceServerType => ({
+    Identifier: resourceServer.Identifier,
+    Name: resourceServer.Name,
+    Scopes: resourceServer.Scopes,
     UserPoolId: userPoolId,
   });
 
