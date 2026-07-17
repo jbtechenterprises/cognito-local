@@ -2,7 +2,7 @@ version: "3"
 
 vars:
   IMAGE: cognito-local
-  TAG: 5.3.0-m2m
+  TAG: 5.3.0-m2m-poolid
 
 tasks:
   docker:build:
