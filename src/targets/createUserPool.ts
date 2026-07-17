@@ -79,14 +79,19 @@ export const CreateUserPool =
   ({ cognito, clock }: CreateUserPoolServices): CreateUserPoolTarget =>
   async (ctx, req) => {
     const now = clock.get();
-    // Allow a deterministic, pinned pool Id for test/emulator setups whose config
-    // references a fixed UserPoolId (e.g. the BoostIdeal integration stack sets
-    // COGNITO_LOCAL_USER_POOL_ID=local_integration_test). Falls back to the AWS-style
-    // random Id when unset. Intended for single-pool emulator stacks — a second
-    // create-user-pool with the env set would reuse the same Id.
+    // Pin a deterministic pool Id for the ONE emulator pool whose name matches
+    // COGNITO_LOCAL_USER_POOL_ID. The BoostIdeal integration stack sets
+    // COGNITO_LOCAL_USER_POOL_ID=local_integration_test and creates that "root"
+    // pool by the same name, so the config's fixed UserPoolId resolves to a real
+    // pool. Every OTHER create-user-pool — e.g. the per-tenant pools the
+    // onboarding/signup flow creates for tenant isolation — still gets a fresh
+    // random AWS-style Id, so distinct tenants get distinct pools (pinning ALL of
+    // them to one Id collapses them into a single pool and breaks isolation).
+    const pinnedPoolId = process.env.COGNITO_LOCAL_USER_POOL_ID;
     const userPoolId =
-      process.env.COGNITO_LOCAL_USER_POOL_ID ||
-      `${REGION}_${generator.new().slice(0, 8)}`;
+      pinnedPoolId && req.PoolName === pinnedPoolId
+        ? pinnedPoolId
+        : `${REGION}_${generator.new().slice(0, 8)}`;
     const userPool = await cognito.createUserPool(ctx, {
       AccountRecoverySetting: req.AccountRecoverySetting,
       AdminCreateUserConfig: req.AdminCreateUserConfig,
